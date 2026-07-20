@@ -4,6 +4,34 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Checkout — {{PAYMENT_DOMAIN}}</title>
+
+<!--
+  Apple Pay JS SDK. Two things it buys us over the bare ApplePaySession API:
+  the <apple-pay-button> web component, and Apple Pay in non-Safari browsers
+  via the iOS 18+ QR handoff.
+
+  Pinned rather than the unversioned /jsapi/v1/ "latest" channel, because
+  Subresource Integrity and a moving target are mutually exclusive — a hash
+  pinned against a URL whose contents change would break on Apple's next
+  release. v1.3.8 is the newest pinned build Apple publishes (1.4.0 → 404).
+
+  The integrity hash is sha384 of the actual bytes at this URL. If Apple
+  reissues the file the script stops loading rather than executing something
+  unverified; the load-failure path below keeps the harness usable.
+
+  crossorigin="anonymous" is required — SRI cannot be enforced on an opaque
+  cross-origin response.
+
+  Note: the CSP on this route sets only frame-ancestors. Tightening it later
+  means adding applepay.cdn-apple.com to script-src.
+-->
+<script
+  src="https://applepay.cdn-apple.com/jsapi/v1.3.8/apple-pay-sdk.js"
+  integrity="sha384-u/9mOkmShCO0v+dqCAZFhiutJuORfzvuyM5i+676iy7mLSWS6rlllHrIt15f/mqH"
+  crossorigin="anonymous"
+  onerror="window.__applePaySdkFailed = true"
+  defer
+></script>
 <style>
   :root { color-scheme: light dark; }
   body { margin: 0; padding: 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -33,11 +61,18 @@
   {{TOTAL_AMOUNT}} {{CURRENCY_CODE}} · region {{COUNTRY_CODE}}
 </div>
 
+<!-- Preferred: the SDK's web component. Falls back to a CSS-styled button if
+     the SDK didn't load, so an SRI mismatch or blocked CDN degrades rather
+     than dead-ends. -->
+<apple-pay-button id="sdkButton" buttonstyle="black" type="buy" locale="en-US"></apple-pay-button>
 <button id="applePayButton" aria-label="Buy with Apple Pay"></button>
 <pre id="log"></pre>
 
 <script>
-(function () {
+// The SDK script is deferred, so it has finished loading (or failed) by
+// DOMContentLoaded. Waiting for that is what lets us report its status
+// accurately instead of racing it.
+document.addEventListener("DOMContentLoaded", function () {
   "use strict";
 
   var CFG = {
@@ -48,7 +83,17 @@
   };
 
   var logEl = document.getElementById("log");
-  var button = document.getElementById("applePayButton");
+  var sdkButton = document.getElementById("sdkButton");
+  var cssButton = document.getElementById("applePayButton");
+
+  var sdkLoaded =
+    !window.__applePaySdkFailed &&
+    !!(window.customElements && customElements.get("apple-pay-button"));
+
+  // Whichever we end up showing, the click handler is identical — the SDK
+  // changes how the button is rendered, not how the session is driven.
+  var button = sdkLoaded ? sdkButton : cssButton;
+  (sdkLoaded ? cssButton : sdkButton).remove();
 
   // The log pane IS the debugging surface. Safari devtools over USB on iOS is
   // painful enough that everything interesting must be visible on the page.
@@ -62,6 +107,16 @@
 
   log("frame origin: " + location.origin);
   log("top-level: " + (window.top === window.self ? "yes" : "no (framed)"));
+
+  if (window.__applePaySdkFailed) {
+    // Most likely an SRI mismatch (Apple reissued the file) or a blocked CDN.
+    log("Apple Pay SDK failed to load — integrity mismatch or blocked CDN; " +
+        "falling back to the bare ApplePaySession API", "err");
+  } else {
+    log("Apple Pay SDK v1.3.8 loaded, integrity verified; " +
+        "button: " + (sdkLoaded ? "<apple-pay-button>" : "CSS fallback"),
+        sdkLoaded ? "ok" : null);
+  }
 
   // Permissions Policy is a web standard, so this reports whether the embedder
   // actually delegated `payment` to us — independent of whether the browser
@@ -165,7 +220,7 @@
     session.begin();
     log("session.begin() called");
   });
-})();
+});
 </script>
 
 </body>

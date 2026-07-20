@@ -28,14 +28,24 @@ const PAYMENT_ORIGIN = `https://${config.paymentDomain}`;
  * Must return 200 with the exact bytes, no redirect. Apple fetches it over the
  * public internet at verification time and periodically after.
  */
-app.get("/.well-known/apple-developer-merchantid-domain-association", (_req, res) => {
-  const file = path.join(ROOT, "well-known", "apple-developer-merchantid-domain-association");
-  if (!fs.existsSync(file)) {
-    console.warn("[well-known] association file missing — Apple verification will fail");
-    return res.status(404).type("text/plain").send("association file not present on server");
-  }
-  res.type("text/plain").send(fs.readFileSync(file));
-});
+app.get(
+  [
+    "/.well-known/apple-developer-merchantid-domain-association",
+    // Apple's portal has issued the file under both spellings depending on when
+    // you downloaded it, and its verifier has probed both. Serving one and not
+    // the other is a coin flip, so serve both from the same bytes.
+    "/.well-known/apple-developer-merchantid-domain-association.txt",
+  ],
+  (req, res) => {
+    const file = path.join(ROOT, "well-known", "apple-developer-merchantid-domain-association");
+    if (!fs.existsSync(file)) {
+      console.warn("[well-known] association file missing — Apple verification will fail");
+      return res.status(404).type("text/plain").send("association file not present on server");
+    }
+    console.log(`[well-known] served ${req.path} to ${req.get("user-agent") ?? "?"}`);
+    res.type("text/plain").send(fs.readFileSync(file));
+  },
+);
 
 app.get("/checkout", (_req, res) => {
   // No X-Frame-Options, and frame-ancestors * so ANY parent may embed us.

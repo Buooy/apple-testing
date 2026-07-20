@@ -195,6 +195,14 @@ document.addEventListener("DOMContentLoaded", function () {
         body: JSON.stringify({ validationURL: event.validationURL })
       })
         .then(function (r) {
+          var gw = r.headers.get("X-Gateway-Host") || "";
+          if (gw) {
+            var sandbox = gw.indexOf("-cert") !== -1;
+            log("gateway: " + gw + " — " +
+                (sandbox ? "SANDBOX (sandbox tester Apple ID)"
+                         : "PRODUCTION (real Apple ID and real card)"),
+                sandbox ? "ok" : "err");
+          }
           return r.json().then(function (body) {
             return { ok: r.ok, status: r.status, body: body };
           });

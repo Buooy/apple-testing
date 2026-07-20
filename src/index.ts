@@ -89,6 +89,13 @@ app.post("/validate-merchant", async (req, res) => {
     console.log(
       `[validate] ${new Date().toISOString()} host=${gatewayHost} status=200 latency=${latencyMs}ms`,
     );
+    // Which gateway Apple hands us is the only reliable signal of whether the
+    // device is in sandbox: the -cert host means a sandbox tester Apple ID, the
+    // bare host means a real Apple ID and a real card. The body must stay the
+    // merchant session verbatim for completeMerchantValidation, so this rides
+    // along as a header for the log pane to surface.
+    res.setHeader("X-Gateway-Host", gatewayHost);
+    res.setHeader("Access-Control-Expose-Headers", "X-Gateway-Host");
     res.json(session);
   } catch (err) {
     const status = err instanceof ValidationError ? err.status : 502;

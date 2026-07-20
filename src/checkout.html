@@ -76,6 +76,7 @@ document.addEventListener("DOMContentLoaded", function () {
   "use strict";
 
   var CFG = {
+    merchantId:   "{{MERCHANT_ID}}",
     countryCode:  "{{COUNTRY_CODE}}",
     currencyCode: "{{CURRENCY_CODE}}",
     totalLabel:   "{{TOTAL_LABEL}}",
@@ -160,6 +161,26 @@ document.addEventListener("DOMContentLoaded", function () {
     return;
   }
 
+  // canMakePayments() only reports that the DEVICE supports Apple Pay — it
+  // returns true with an empty Wallet. canMakePaymentsWithActiveCard() is the
+  // one that asks whether a card is actually provisioned FOR THIS MERCHANT.
+  // Without this check the sheet opens and then cancels itself a couple of
+  // seconds later, which reads as a mysterious failure rather than "no card".
+  if (ApplePaySession.canMakePaymentsWithActiveCard) {
+    ApplePaySession.canMakePaymentsWithActiveCard(CFG.merchantId).then(
+      function (hasCard) {
+        log("active card provisioned for " + CFG.merchantId + ": " + hasCard,
+            hasCard ? "ok" : "err");
+        if (!hasCard) {
+          log("→ the sheet will open and self-cancel. Wallet has no card this " +
+              "merchant can accept: wrong region, unsupported network, or " +
+              "(most likely here) a real card against a merchant with no " +
+              "payment processor.", "err");
+        }
+      }
+    );
+  }
+
   resolveButton().then(function (button) {
     var usedSdk = button === sdkButton;
     (usedSdk ? cssButton : sdkButton).remove();
@@ -182,6 +203,7 @@ document.addEventListener("DOMContentLoaded", function () {
       total: { label: CFG.totalLabel, amount: CFG.totalAmount, type: "final" }
     };
 
+    var validatedAt = null;
     var session = new ApplePaySession(version, request);
     log("session created");
 
@@ -216,6 +238,7 @@ document.addEventListener("DOMContentLoaded", function () {
             return;
           }
           log("merchant session received in " + ms + "ms", "ok");
+          validatedAt = performance.now();
           session.completeMerchantValidation(res.body);
         })
         .catch(function (e) {
@@ -240,7 +263,19 @@ document.addEventListener("DOMContentLoaded", function () {
       log("completePayment(STATUS_SUCCESS)", "ok");
     };
 
-    session.oncancel = function () { log("oncancel — sheet dismissed"); };
+    // A user dismissal and a system self-cancel are the same event. The tell is
+    // how soon it lands after validation: a person takes longer than ~4s to
+    // read the sheet and dismiss it, so anything faster is the system giving up.
+    session.oncancel = function () {
+      var sinceValidation = validatedAt ? Math.round(performance.now() - validatedAt) : null;
+      if (sinceValidation !== null && sinceValidation < 4000) {
+        log("oncancel " + sinceValidation + "ms after validation — too fast to be " +
+            "you. The system aborted: no card in Wallet this merchant can accept.", "err");
+      } else {
+        log("oncancel — sheet dismissed" +
+            (sinceValidation !== null ? " (" + sinceValidation + "ms after validation)" : ""));
+      }
+    };
 
     session.begin();
     log("session.begin() called");

@@ -10,7 +10,3 @@ certs/*
 *.key
 
 .DS_Store
-
-# The server serves the .txt route from the extensionless file. Keeping a
-# second copy on disk only creates a chance for the two to drift apart.
-well-known/*.txt

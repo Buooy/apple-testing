@@ -37,12 +37,24 @@ app.get(
     "/.well-known/apple-developer-merchantid-domain-association.txt",
   ],
   (req, res) => {
-    const file = path.join(ROOT, "well-known", "apple-developer-merchantid-domain-association");
-    if (!fs.existsSync(file)) {
-      console.warn("[well-known] association file missing — Apple verification will fail");
+    // Apple's portal hands the file over as either name depending on browser
+    // and download date. Take whichever is on disk rather than making the
+    // filename load-bearing — a re-download that lands under the other name is
+    // the likeliest way for this route to silently start 404ing.
+    const file = [
+      "apple-developer-merchantid-domain-association",
+      "apple-developer-merchantid-domain-association.txt",
+    ]
+      .map((n) => path.join(ROOT, "well-known", n))
+      .find(fs.existsSync);
+
+    if (!file) {
+      console.warn("[well-known] no association file on disk — Apple verification will fail");
       return res.status(404).type("text/plain").send("association file not present on server");
     }
-    console.log(`[well-known] served ${req.path} to ${req.get("user-agent") ?? "?"}`);
+    console.log(
+      `[well-known] served ${req.path} from ${path.basename(file)} to ${req.get("user-agent") ?? "?"}`,
+    );
     res.type("text/plain").send(fs.readFileSync(file));
   },
 );

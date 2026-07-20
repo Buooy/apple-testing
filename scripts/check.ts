@@ -71,7 +71,22 @@ if (hasB64) {
           "create one, then: MERCHANT_P12_PATH=... npm run certs",
       );
     } else {
-      ok(`merchant identity cert from certs/  (${subject.split("/CN=")[1] ?? subject})`);
+      // A cert and key that don't belong together fail at TLS handshake time
+      // with a thoroughly unhelpful error. Catch it here instead.
+      const pub = (args: string[]) =>
+        execFileSync("openssl", args, { encoding: "utf8" }).trim();
+      const certPub = pub(["x509", "-in", certPath, "-noout", "-pubkey"]);
+      const keyPub = pub(["pkey", "-in", keyPath, "-pubout"]);
+
+      if (certPub !== keyPub) {
+        bad(
+          "certs/merchant_id_cert.pem does not match merchant_id_key.pem",
+          "these are from different keypairs — download the cert Apple issued for\n" +
+            "          certs/merchant_id.csr and overwrite merchant_id_cert.pem",
+        );
+      } else {
+        ok(`merchant identity cert + matching key  (${subject.split("/CN=")[1] ?? subject})`);
+      }
     }
   } catch {
     bad("certs/merchant_id_cert.pem is unreadable", "regenerate with npm run certs");

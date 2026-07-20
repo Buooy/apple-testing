@@ -29,7 +29,10 @@ if openssl version | grep -qi "^OpenSSL 3"; then
 fi
 echo "using $(openssl version)${LEGACY:+ (with -legacy)}"
 
-if [ -n "${MERCHANT_P12_PASSPHRASE:-}" ]; then
+# Test for "set" rather than "non-empty": Keychain Access happily exports with
+# an empty passphrase, and treating that as unset makes openssl block on a
+# prompt that never gets answered in a non-interactive run.
+if [ "${MERCHANT_P12_PASSPHRASE+set}" = set ]; then
   PASSIN=(-passin env:MERCHANT_P12_PASSPHRASE)
 else
   PASSIN=()

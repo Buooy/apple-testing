@@ -167,6 +167,29 @@ document.addEventListener("DOMContentLoaded", function () {
   // one that asks whether a card is actually provisioned FOR THIS MERCHANT.
   // Without this check the sheet opens and then cancels itself a couple of
   // seconds later, which reads as a mysterious failure rather than "no card".
+  // The Integration Guide's current recommendation. Unlike canMakePayments* it
+  // is specified to work in third-party browsers, and it reports WHY Apple Pay
+  // is unavailable rather than a bare boolean — which is the distinction we
+  // need, given a sheet that opens and then cancels itself.
+  if (ApplePaySession.applePayCapabilities) {
+    ApplePaySession.applePayCapabilities(CFG.merchantId)
+      .then(function (caps) {
+        var s = caps && caps.paymentCredentialStatus;
+        log("applePayCapabilities → " + s,
+            s === "paymentCredentialsAvailable" ? "ok" : "err");
+        if (s === "paymentCredentialsUnavailable") {
+          log("→ device supports Apple Pay but has no credential usable with " +
+              "this merchant.", "err");
+        } else if (s === "applePayUnsupported") {
+          log("→ Apple Pay unsupported in this region or on this device.", "err");
+        }
+      })
+      .catch(function (e) { log("applePayCapabilities threw: " + e.message, "err"); });
+  } else {
+    log("applePayCapabilities unavailable in this browser — falling back to " +
+        "canMakePaymentsWithActiveCard");
+  }
+
   if (ApplePaySession.canMakePaymentsWithActiveCard) {
     ApplePaySession.canMakePaymentsWithActiveCard(CFG.merchantId).then(
       function (hasCard) {
@@ -257,15 +280,47 @@ document.addEventListener("DOMContentLoaded", function () {
       log("onpaymentauthorized — token (" + token.length + " chars): " +
           token.slice(0, 300) + "…", "ok");
 
-      // Isolated handoff. A PSP call or token decryption slots in right here.
+      // The guide is explicit: complete only AFTER the PSP responds, and pass
+      // their actual outcome through. Reporting success unconditionally shows
+      // the customer a tick for a payment that may have failed. Today the
+      // server just acknowledges, but the shape is the real one, so swapping in
+      // a PSP call means changing the server handler and nothing here.
+      //
+      // Apple dismisses the sheet if we don't complete within ~30s, so every
+      // path below must call completePayment exactly once.
+      function finish(ok, message) {
+        if (ok) {
+          session.completePayment({ status: ApplePaySession.STATUS_SUCCESS });
+          log("completePayment(SUCCESS)", "ok");
+          return;
+        }
+        var result = { status: ApplePaySession.STATUS_FAILURE };
+        // ApplePayError surfaces the reason inside the sheet rather than a
+        // generic failure. It arrived in a later API version, so guard it.
+        if (typeof ApplePayError === "function") {
+          result.errors = [new ApplePayError("unknown", undefined, message)];
+        }
+        session.completePayment(result);
+        log("completePayment(FAILURE): " + message, "err");
+      }
+
       fetch("/authorized", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ token: event.payment.token })
-      }).catch(function () { /* non-fatal for the harness */ });
-
-      session.completePayment(ApplePaySession.STATUS_SUCCESS);
-      log("completePayment(STATUS_SUCCESS)", "ok");
+      })
+        .then(function (r) {
+          return r.json().then(
+            function (b) { return { ok: r.ok && b && b.ok !== false, body: b }; },
+            function () { return { ok: false, body: { error: "non-JSON response" } }; }
+          );
+        })
+        .then(function (res) {
+          finish(res.ok, res.ok ? "" : (res.body && res.body.error) || "processing failed");
+        })
+        .catch(function (e) {
+          finish(false, "could not reach the merchant server: " + e.message);
+        });
     };
 
     // A user dismissal and a system self-cancel are the same event. The tell is

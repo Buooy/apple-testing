@@ -77,6 +77,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
   var CFG = {
     merchantId:   "{{MERCHANT_ID}}",
+    supportedNetworks: {{SUPPORTED_NETWORKS_JSON}},
     countryCode:  "{{COUNTRY_CODE}}",
     currencyCode: "{{CURRENCY_CODE}}",
     totalLabel:   "{{TOTAL_LABEL}}",
@@ -198,10 +199,14 @@ document.addEventListener("DOMContentLoaded", function () {
     var request = {
       countryCode: CFG.countryCode,
       currencyCode: CFG.currencyCode,
-      supportedNetworks: ["visa", "masterCard", "amex"],
+      supportedNetworks: CFG.supportedNetworks,
       merchantCapabilities: ["supports3DS"],
       total: { label: CFG.totalLabel, amount: CFG.totalAmount, type: "final" }
     };
+
+    log("requesting " + CFG.totalAmount + " " + CFG.currencyCode +
+        " (merchant region " + CFG.countryCode + "), networks: " +
+        CFG.supportedNetworks.join(", "));
 
     var validatedAt = null;
     var session = new ApplePaySession(version, request);
@@ -269,8 +274,13 @@ document.addEventListener("DOMContentLoaded", function () {
     session.oncancel = function () {
       var sinceValidation = validatedAt ? Math.round(performance.now() - validatedAt) : null;
       if (sinceValidation !== null && sinceValidation < 4000) {
-        log("oncancel " + sinceValidation + "ms after validation — too fast to be " +
-            "you. The system aborted: no card in Wallet this merchant can accept.", "err");
+        log("oncancel " + sinceValidation + "ms after validation — too fast to be you; " +
+            "the system aborted.", "err");
+        log("→ a card IS provisioned for this merchant, so the sheet found it " +
+            "unusable for THIS request. Most likely the card's network isn't in " +
+            "supportedNetworks (" + CFG.supportedNetworks.join(", ") + "), or the " +
+            "real-card/production mismatch. Sandbox tester is the way to rule the " +
+            "second one out.", "err");
       } else {
         log("oncancel — sheet dismissed" +
             (sinceValidation !== null ? " (" + sinceValidation + "ms after validation)" : ""));

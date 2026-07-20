@@ -53,6 +53,21 @@ export const config = {
   /** The Apple-verified domain. Doubles as the Host-header routing key. */
   paymentDomain: env("PAYMENT_DOMAIN", "pay.buooy.com"),
 
+  /**
+   * Card networks the sheet will accept. A card can be provisioned for the
+   * merchant (canMakePaymentsWithActiveCard true) and still be unusable for a
+   * given request if its network isn't listed here — the sheet then opens and
+   * cancels itself. Broad by default because narrowing this is a silent
+   * failure; a real integration narrows it to what its PSP settles.
+   */
+  supportedNetworks: env(
+    "SUPPORTED_NETWORKS",
+    "visa,masterCard,amex,jcb,discover,chinaUnionPay,maestro,electron",
+  )
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
+
   countryCode: env("COUNTRY_CODE", "SG"),
   currencyCode: env("CURRENCY_CODE", "SGD"),
   totalLabel: env("TOTAL_LABEL", "Iframe Harness"),

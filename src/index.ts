@@ -70,6 +70,7 @@ app.get("/checkout", (_req, res) => {
       MERCHANT_ID: config.merchantId,
       DISPLAY_NAME: config.displayName,
       PAYMENT_DOMAIN: config.paymentDomain,
+      SUPPORTED_NETWORKS_JSON: JSON.stringify(config.supportedNetworks),
       COUNTRY_CODE: config.countryCode,
       CURRENCY_CODE: config.currencyCode,
       TOTAL_LABEL: config.totalLabel,

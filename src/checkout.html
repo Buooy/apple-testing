@@ -63,6 +63,20 @@
   log("frame origin: " + location.origin);
   log("top-level: " + (window.top === window.self ? "yes" : "no (framed)"));
 
+  // Permissions Policy is a web standard, so this reports whether the embedder
+  // actually delegated `payment` to us — independent of whether the browser
+  // implements Apple Pay at all. It separates "the parent didn't delegate" from
+  // "this browser has no ApplePaySession", which otherwise look identical.
+  // WebKit hasn't shipped this introspection API, so it's absent on Safari.
+  var fp = document.featurePolicy || document.permissionsPolicy;
+  if (fp && typeof fp.allowsFeature === "function") {
+    var granted = fp.allowsFeature("payment");
+    log("payment permission delegated to this frame: " + granted,
+        granted ? "ok" : "err");
+  } else {
+    log("payment permission: not introspectable in this browser (expected on Safari)");
+  }
+
   if (!window.ApplePaySession) {
     log("ApplePaySession unavailable — wrong browser, or missing allow=payment on parent iframe", "err");
     return;

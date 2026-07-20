@@ -46,8 +46,17 @@ const keyPath = path.join(ROOT, "certs", "merchant_id_key.pem");
 const hasB64 = Boolean(process.env.MERCHANT_ID_CERT_B64 && process.env.MERCHANT_ID_KEY_B64);
 const hasFiles = fs.existsSync(certPath) && fs.existsSync(keyPath);
 
+const KEYCHAIN_EXPORT =
+  "the private key is in your login keychain (from the CSR), but the PEM isn't on disk:\n" +
+  "          1. open certs/merchant_id.cer to import it into Keychain Access\n" +
+  "          2. Keychain Access → My Certificates → 'Apple Pay Merchant Identity: ...'\n" +
+  "             → expand it, select BOTH rows → right-click → Export 2 items → .p12\n" +
+  "          3. MERCHANT_P12_PATH=~/Downloads/Certificates.p12 npm run certs";
+
 if (hasB64) {
   ok("merchant identity cert from env (base64)");
+} else if (fs.existsSync(certPath) && !fs.existsSync(keyPath)) {
+  bad("merchant identity cert present, but no private key", KEYCHAIN_EXPORT);
 } else if (hasFiles) {
   try {
     const subject = execFileSync(

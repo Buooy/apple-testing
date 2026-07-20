@@ -66,7 +66,21 @@ LibreSSL that ships with macOS (doesn't have the flag). Output lands in
 
 ---
 
-## Deploy
+## Live deployment
+
+| | |
+|---|---|
+| Project | `applepay-iframe-harness` (Experiments workspace) |
+| Service | `harness` |
+| Parent origin | https://harness-production-f9f3.up.railway.app |
+| Payment origin | `https://pay.buooy.com` — attached, **DNS not yet pointed** |
+
+The Railway-generated host is the unverified parent: a different registrable
+domain from `buooy.com`, which is exactly the separation being tested.
+
+Redeploy with `railway up --service harness`.
+
+## Deploy from scratch
 
 ```bash
 railway init

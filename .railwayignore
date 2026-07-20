@@ -1,0 +1,8 @@
+# Belt and braces. These are already git-ignored, but `railway up` uploads a
+# directory rather than a commit, so state it explicitly: key material reaches
+# the deployment through Railway variables, never through the build context.
+certs/
+.env
+*.p12
+*.pem
+node_modules/

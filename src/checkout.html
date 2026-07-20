@@ -86,14 +86,23 @@ document.addEventListener("DOMContentLoaded", function () {
   var sdkButton = document.getElementById("sdkButton");
   var cssButton = document.getElementById("applePayButton");
 
-  var sdkLoaded =
-    !window.__applePaySdkFailed &&
-    !!(window.customElements && customElements.get("apple-pay-button"));
-
-  // Whichever we end up showing, the click handler is identical — the SDK
-  // changes how the button is rendered, not how the session is driven.
-  var button = sdkLoaded ? sdkButton : cssButton;
-  (sdkLoaded ? cssButton : sdkButton).remove();
+  // The SDK registers <apple-pay-button> a beat AFTER its script's load event
+  // (measured ~10ms), so a synchronous check here loses the race every time and
+  // silently downgrades to the fallback. Wait for the definition, capped so a
+  // CDN that loads but never registers can't leave the page buttonless.
+  function resolveButton() {
+    if (window.__applePaySdkFailed || !window.customElements) {
+      return Promise.resolve(cssButton);
+    }
+    return Promise.race([
+      customElements.whenDefined("apple-pay-button").then(function () {
+        return sdkButton;
+      }),
+      new Promise(function (resolve) {
+        setTimeout(function () { resolve(cssButton); }, 3000);
+      })
+    ]);
+  }
 
   // The log pane IS the debugging surface. Safari devtools over USB on iOS is
   // painful enough that everything interesting must be visible on the page.
@@ -113,9 +122,7 @@ document.addEventListener("DOMContentLoaded", function () {
     log("Apple Pay SDK failed to load — integrity mismatch or blocked CDN; " +
         "falling back to the bare ApplePaySession API", "err");
   } else {
-    log("Apple Pay SDK v1.3.8 loaded, integrity verified; " +
-        "button: " + (sdkLoaded ? "<apple-pay-button>" : "CSS fallback"),
-        sdkLoaded ? "ok" : null);
+    log("Apple Pay SDK v1.3.8 loaded, SRI check passed");
   }
 
   // Permissions Policy is a web standard, so this reports whether the embedder
@@ -153,10 +160,20 @@ document.addEventListener("DOMContentLoaded", function () {
     return;
   }
 
-  button.style.display = "block";
-  log("button ready — click to open the sheet", "ok");
+  resolveButton().then(function (button) {
+    var usedSdk = button === sdkButton;
+    (usedSdk ? cssButton : sdkButton).remove();
+    log("button: " + (usedSdk ? "<apple-pay-button> (SDK)" : "CSS fallback"),
+        usedSdk ? "ok" : null);
 
-  button.addEventListener("click", function () {
+    button.style.display = "block";
+    log("button ready — click to open the sheet", "ok");
+    button.addEventListener("click", startSession);
+  });
+
+  // Identical regardless of which button rendered — the SDK changes how the
+  // button looks, not how the session is driven.
+  function startSession() {
     var request = {
       countryCode: CFG.countryCode,
       currencyCode: CFG.currencyCode,
@@ -219,7 +236,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     session.begin();
     log("session.begin() called");
-  });
+  }
 });
 </script>
 

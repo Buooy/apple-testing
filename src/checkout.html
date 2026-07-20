@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checkout — {{PAYMENT_DOMAIN}}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 12px; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  h1 { font-size: 13px; margin: 0 0 2px; }
+  .meta { opacity: .65; margin-bottom: 12px; }
+  apple-pay-button, #applePayButton {
+    -webkit-appearance: -apple-pay-button;
+    appearance: -apple-pay-button;
+    -apple-pay-button-type: buy;
+    -apple-pay-button-style: black;
+    width: 100%; height: 44px; cursor: pointer; display: none;
+  }
+  #log {
+    margin-top: 12px; padding: 8px; height: 340px; overflow-y: auto;
+    background: #111; color: #0f0; border-radius: 4px;
+    font-size: 11px; white-space: pre-wrap; word-break: break-all;
+  }
+  .err { color: #f66; }
+  .ok  { color: #6f6; }
+</style>
+</head>
+<body>
+
+<h1>Payment iframe — {{PAYMENT_DOMAIN}}</h1>
+<div class="meta">
+  {{DISPLAY_NAME}} · {{MERCHANT_ID}}<br>
+  {{TOTAL_AMOUNT}} {{CURRENCY_CODE}} · region {{COUNTRY_CODE}}
+</div>
+
+<button id="applePayButton" aria-label="Buy with Apple Pay"></button>
+<pre id="log"></pre>
+
+<script>
+(function () {
+  "use strict";
+
+  var CFG = {
+    countryCode:  "{{COUNTRY_CODE}}",
+    currencyCode: "{{CURRENCY_CODE}}",
+    totalLabel:   "{{TOTAL_LABEL}}",
+    totalAmount:  "{{TOTAL_AMOUNT}}"
+  };
+
+  var logEl = document.getElementById("log");
+  var button = document.getElementById("applePayButton");
+
+  // The log pane IS the debugging surface. Safari devtools over USB on iOS is
+  // painful enough that everything interesting must be visible on the page.
+  function log(msg, cls) {
+    var line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = new Date().toISOString().slice(11, 23) + "  " + msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  log("frame origin: " + location.origin);
+  log("top-level: " + (window.top === window.self ? "yes" : "no (framed)"));
+
+  if (!window.ApplePaySession) {
+    log("ApplePaySession unavailable — wrong browser, or missing allow=payment on parent iframe", "err");
+    return;
+  }
+
+  // Negotiate down: Safari 17 supports high versions, older WebKit does not.
+  var version = [14, 10, 6, 4, 3].filter(function (v) {
+    return ApplePaySession.supportsVersion(v);
+  })[0];
+
+  if (!version) {
+    log("no supported ApplePaySession version", "err");
+    return;
+  }
+  log("ApplePaySession available, using version " + version, "ok");
+
+  if (!ApplePaySession.canMakePayments()) {
+    log("canMakePayments() false — device cannot make payments", "err");
+    return;
+  }
+
+  button.style.display = "block";
+  log("button ready — click to open the sheet", "ok");
+
+  button.addEventListener("click", function () {
+    var request = {
+      countryCode: CFG.countryCode,
+      currencyCode: CFG.currencyCode,
+      supportedNetworks: ["visa", "masterCard", "amex"],
+      merchantCapabilities: ["supports3DS"],
+      total: { label: CFG.totalLabel, amount: CFG.totalAmount, type: "final" }
+    };
+
+    var session = new ApplePaySession(version, request);
+    log("session created");
+
+    session.onvalidatemerchant = function (event) {
+      log("onvalidatemerchant → " + event.validationURL);
+      var t0 = performance.now();
+
+      fetch("/validate-merchant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ validationURL: event.validationURL })
+      })
+        .then(function (r) {
+          return r.json().then(function (body) {
+            return { ok: r.ok, status: r.status, body: body };
+          });
+        })
+        .then(function (res) {
+          var ms = Math.round(performance.now() - t0);
+          if (!res.ok) {
+            log("validation FAILED (" + res.status + ") in " + ms + "ms: " +
+                JSON.stringify(res.body), "err");
+            session.abort();
+            return;
+          }
+          log("merchant session received in " + ms + "ms", "ok");
+          session.completeMerchantValidation(res.body);
+        })
+        .catch(function (e) {
+          log("validation request threw: " + e.message, "err");
+          session.abort();
+        });
+    };
+
+    session.onpaymentauthorized = function (event) {
+      var token = JSON.stringify(event.payment.token);
+      log("onpaymentauthorized — token (" + token.length + " chars): " +
+          token.slice(0, 300) + "…", "ok");
+
+      // Isolated handoff. A PSP call or token decryption slots in right here.
+      fetch("/authorized", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: event.payment.token })
+      }).catch(function () { /* non-fatal for the harness */ });
+
+      session.completePayment(ApplePaySession.STATUS_SUCCESS);
+      log("completePayment(STATUS_SUCCESS)", "ok");
+    };
+
+    session.oncancel = function () { log("oncancel — sheet dismissed"); };
+
+    session.begin();
+    log("session.begin() called");
+  });
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "applepay-iframe-harness",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Cross-origin iframe Apple Pay harness: unverified parent embeds a verified payment origin.",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "check": "tsx scripts/check.ts",
+    "certs": "bash scripts/convert-certs.sh"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.5",
+    "typescript": "^5.7.3"
+  }
+}

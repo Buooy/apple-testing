@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.local
+
+# Never commit private keys or cert bundles.
+certs/*
+!certs/.gitkeep
+*.p12
+*.pem
+*.key
+
+.DS_Store

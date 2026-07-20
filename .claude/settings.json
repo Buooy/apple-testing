@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run check)",
+      "Bash(npm start)",
+      "Bash(npm install)",
+      "Bash(npx tsc --noEmit)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(railway status:*)",
+      "Bash(railway logs:*)",
+      "Bash(railway up:*)",
+      "Bash(railway variables:*)",
+      "Bash(dig:*)",
+      "Bash(host:*)",
+      "Bash(curl -s:*)",
+      "Bash(curl -sS:*)",
+      "Bash(curl -sI:*)",
+      "Bash(openssl x509:*)",
+      "Bash(openssl req:*)",
+      "Bash(cmp:*)"
+    ],
+    "deny": [
+      "Read(./certs/**)",
+      "Read(./.env)",
+      "Bash(cat ./certs/**)",
+      "Bash(railway variables --kv)"
+    ]
+  }
+}

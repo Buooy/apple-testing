@@ -113,7 +113,11 @@ app.post("/validate-merchant", async (req, res) => {
  */
 app.post("/authorized", (req, res) => {
   const token = req.body?.token;
-  console.log(`[authorized] received token, network=${token?.paymentMethod?.network ?? "?"}`);
+  const session = typeof req.body?.session === "string" ? req.body.session : "";
+  console.log(
+    `[authorized] received token, network=${token?.paymentMethod?.network ?? "?"}` +
+      (session ? ` session=${session}` : ""),
+  );
   res.json({ ok: true });
 });
 
@@ -124,6 +128,19 @@ app.post("/authorized", (req, res) => {
 
 app.get("/", (req, res) => {
   if (req.hostname === config.paymentDomain) return res.redirect("/checkout");
+
+  // Popup mode is structurally different from the three iframe modes: the parent
+  // embeds nothing and delegates nothing, it just opens the verified origin in a
+  // top-level window. Its own page, not a variant of the iframe parent.
+  if ("popup" in req.query) {
+    return res.type("html").send(
+      page("popup.html", {
+        PARENT_HOST: req.hostname,
+        PAYMENT_ORIGIN,
+        PAYMENT_DOMAIN: config.paymentDomain,
+      }),
+    );
+  }
 
   const noPayment = "nopayment" in req.query;
   const deep = "deep" in req.query;

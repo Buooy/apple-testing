@@ -116,8 +116,30 @@ document.addEventListener("DOMContentLoaded", function () {
     logEl.scrollTop = logEl.scrollHeight;
   }
 
+  // Popup flow: this document was opened by window.open() rather than framed.
+  // It carries a session id and its opener's origin so it can report the result
+  // back — the opener is a different origin and cannot read our events directly.
+  var params = new URLSearchParams(location.search);
+  var POPUP = params.has("popup");
+  var SESSION = params.get("session") || "";
+  var OPENER = params.get("opener") || "";
+
+  function notifyOpener(status, detail) {
+    if (!POPUP || !window.opener || !OPENER) return;
+    try {
+      window.opener.postMessage(
+        { type: "applepay-harness", session: SESSION, status: status, detail: detail || "" },
+        OPENER  // targetOrigin — never post the result to a wildcard
+      );
+    } catch (e) { /* opener navigated away or closed */ }
+  }
+
   log("frame origin: " + location.origin);
   log("top-level: " + (window.top === window.self ? "yes" : "no (framed)"));
+  if (POPUP) {
+    log("popup mode — session " + (SESSION ? SESSION.slice(0, 8) : "(none)") +
+        ", will report to opener " + OPENER, "ok");
+  }
 
   if (window.__applePaySdkFailed) {
     // Most likely an SRI mismatch (Apple reissued the file) or a blocked CDN.
@@ -292,8 +314,10 @@ document.addEventListener("DOMContentLoaded", function () {
         if (ok) {
           session.completePayment({ status: ApplePaySession.STATUS_SUCCESS });
           log("completePayment(SUCCESS)", "ok");
+          notifyOpener("authorized", "");
           return;
         }
+        notifyOpener("failed", message);
         var result = { status: ApplePaySession.STATUS_FAILURE };
         // ApplePayError surfaces the reason inside the sheet rather than a
         // generic failure. It arrived in a later API version, so guard it.
@@ -307,7 +331,7 @@ document.addEventListener("DOMContentLoaded", function () {
       fetch("/authorized", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: event.payment.token })
+        body: JSON.stringify({ token: event.payment.token, session: SESSION })
       })
         .then(function (r) {
           return r.json().then(
@@ -340,6 +364,8 @@ document.addEventListener("DOMContentLoaded", function () {
         log("oncancel — sheet dismissed" +
             (sinceValidation !== null ? " (" + sinceValidation + "ms after validation)" : ""));
       }
+      notifyOpener("cancelled",
+        sinceValidation !== null && sinceValidation < 4000 ? "system aborted" : "dismissed");
     };
 
     session.begin();

@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Popup checkout — {{PARENT_HOST}}</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { margin: 0; padding: 20px; font: 14px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace;
+         max-width: 560px; }
+  h1 { font-size: 16px; margin: 0 0 4px; }
+  .sub { opacity: .65; margin-bottom: 16px; }
+  .mode { padding: 8px 10px; border-left: 3px solid currentColor; margin-bottom: 16px;
+          background: rgba(127,127,127,.12); font-size: 12px; }
+  nav { margin-bottom: 16px; font-size: 12px; }
+  nav a { margin-right: 12px; }
+  /* A parent-side CLONE, not the real Apple Pay button. Apple's HIG says don't
+     mimic the button — but the whole point here is that the real, SDK-rendered
+     button lives in the popup on the verified origin. This one is only a
+     trigger, so it's styled to look the part without being an ApplePaySession. */
+  .clone { -webkit-appearance: none; appearance: none; width: 100%; max-width: 420px;
+           height: 44px; border: 0; border-radius: 8px; background: #000; color: #fff;
+           font: 600 17px -apple-system, system-ui, sans-serif; cursor: pointer;
+           display: block; }
+  @media (prefers-color-scheme: dark) { .clone { background: #fff; color: #000; } }
+  #log { margin-top: 16px; padding: 8px; height: 300px; overflow-y: auto; max-width: 420px;
+         background: #111; color: #0f0; border-radius: 4px; font-size: 11px;
+         white-space: pre-wrap; word-break: break-all; }
+  .err { color: #f66; } .ok { color: #6f6; }
+</style>
+</head>
+<body>
+
+<h1>Unverified parent — popup flow</h1>
+<div class="sub">
+  this page: <strong>{{PARENT_HOST}}</strong> — embeds nothing, delegates nothing<br>
+  payment:   opens <strong>{{PAYMENT_DOMAIN}}</strong> in a top-level window
+</div>
+
+<div class="mode">
+  POPUP — the parent opens the verified origin in its own window. No iframe, no
+  <code>allow=&quot;payment&quot;</code>: Apple Pay runs first-party and top-level, so
+  the parent is irrelevant to Apple's trust decision. Each open carries a unique
+  session id; the window reports its result back by postMessage.
+</div>
+
+<nav>
+  <a href="/">default</a>
+  <a href="/?nopayment=1">negative control</a>
+  <a href="/?deep=1">nested frames</a>
+  <a href="/?popup=1">popup window</a>
+</nav>
+
+<button id="clone" class="clone">Buy with &#63743;&nbsp;Pay</button>
+<pre id="log"></pre>
+
+<script>
+(function () {
+  "use strict";
+
+  var PAYMENT_ORIGIN = "{{PAYMENT_ORIGIN}}";
+  var logEl = document.getElementById("log");
+  var cloneBtn = document.getElementById("clone");
+  var popup = null;
+
+  function log(msg, cls) {
+    var line = document.createElement("div");
+    if (cls) line.className = cls;
+    line.textContent = new Date().toISOString().slice(11, 23) + "  " + msg;
+    logEl.appendChild(line);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  log("parent origin: " + location.origin);
+  log("this page grants no payment permission and embeds no frame", "ok");
+
+  cloneBtn.addEventListener("click", function () {
+    // The window MUST open synchronously inside the click handler. Any await
+    // first (e.g. fetching a session id from the server) and the popup blocker
+    // kills it, because it's no longer attributable to the user gesture.
+    var session = (window.crypto && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : String(Date.now()) + "-" + Math.floor(Math.random() * 1e9);
+
+    var url = PAYMENT_ORIGIN + "/checkout?popup=1" +
+      "&session=" + encodeURIComponent(session) +
+      "&opener=" + encodeURIComponent(location.origin);
+
+    popup = window.open(url, "applepay_" + session, "width=430,height=680");
+    if (!popup) {
+      log("window.open returned null — popup blocked. Allow popups for this site.", "err");
+      return;
+    }
+    log("opened " + PAYMENT_ORIGIN + "/checkout in a top-level window", "ok");
+    log("session " + session);
+    log("waiting for the window to report back…");
+  });
+
+  window.addEventListener("message", function (e) {
+    // Only the verified origin may speak for a payment result.
+    if (e.origin !== PAYMENT_ORIGIN) return;
+    var m = e.data || {};
+    if (m.type !== "applepay-harness") return;
+
+    var tag = m.session ? "[" + String(m.session).slice(0, 8) + "] " : "";
+    var cls = m.status === "authorized" ? "ok" : (m.status === "failed" ? "err" : null);
+    log("← " + tag + m.status + (m.detail ? " — " + m.detail : ""), cls);
+
+    if ((m.status === "authorized" || m.status === "failed") && popup && !popup.closed) {
+      popup.close();
+      log("closed the payment window");
+    }
+  });
+})();
+</script>
+
+</body>
+</html>
